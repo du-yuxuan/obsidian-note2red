@@ -151,6 +151,22 @@ describe('splitCSSBlocks', () => {
         expect(blocks).toHaveLength(1);
     });
 
+    it('ignores braces inside quoted strings', () => {
+        const css = '.a { content: "}"; } .b { color: red; }';
+        const blocks = splitCSSBlocks(css);
+        expect(blocks).toHaveLength(2);
+        expect(blocks[0].trim()).toBe('.a { content: "}"; }');
+        expect(blocks[1].trim()).toBe('.b { color: red; }');
+    });
+
+    it('ignores braces inside single-quoted strings', () => {
+        const css = ".x::after { content: '{'; } .y { margin: 0; }";
+        const blocks = splitCSSBlocks(css);
+        expect(blocks).toHaveLength(2);
+        expect(blocks[0].trim()).toBe(".x::after { content: '{'; }");
+        expect(blocks[1].trim()).toBe('.y { margin: 0; }');
+    });
+
     it('handles empty input', () => {
         expect(splitCSSBlocks('')).toHaveLength(0);
     });

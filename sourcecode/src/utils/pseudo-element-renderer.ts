@@ -144,14 +144,27 @@ export function splitCSSBlocks(css: string): string[] {
     const blocks: string[] = [];
     let depth = 0;
     let current = '';
+    let inString = false;
+    let stringChar = '';
 
     for (const ch of css) {
-        if (ch === '{') { depth++; current += ch; }
-        else if (ch === '}') {
+        if (inString) {
+            current += ch;
+            if (ch === stringChar) inString = false;
+        } else if (ch === '"' || ch === "'") {
+            inString = true;
+            stringChar = ch;
+            current += ch;
+        } else if (ch === '{') {
+            depth++;
+            current += ch;
+        } else if (ch === '}') {
             depth--;
             current += ch;
             if (depth === 0) { blocks.push(current); current = ''; }
-        } else { current += ch; }
+        } else {
+            current += ch;
+        }
     }
     if (current.trim()) blocks.push(current);
     return blocks;

@@ -1,0 +1,127 @@
+Note2Red 安装与使用说明
+
+一、这是什么
+
+Note2Red 是一个 Obsidian 插件，可以把当前 Markdown 笔记预览并导出为适合小红书等图文平台发布的图片。
+
+本压缩包里不包含 data.json。data.json 是每个人自己的插件配置文件，第一次启用插件后会自动生成。
+
+
+二、安装位置
+
+请把整个 obsidian-note2red 文件夹放到你的 Obsidian 仓库下面：
+
+你的 Obsidian 仓库/.obsidian/plugins/obsidian-note2red/
+
+例如：
+
+我的笔记库/.obsidian/plugins/obsidian-note2red/
+
+最终这个文件夹里至少应该能看到这几个文件：
+
+manifest.json
+main.js
+styles.css
+LICENSE
+使用说明.txt
+
+注意：
+1. .obsidian 是隐藏文件夹。
+2. macOS Finder 中可以按 Command + Shift + . 显示隐藏文件。
+3. Windows 资源管理器中可以在“查看”里打开“隐藏的项目”。
+4. 不要只复制里面的文件，要复制整个 obsidian-note2red 文件夹。
+
+
+三、启用插件
+
+1. 打开 Obsidian。
+2. 进入“设置”。
+3. 进入“第三方插件”。
+4. 如果还没有打开第三方插件，请先关闭安全模式或开启第三方插件。
+5. 在已安装插件列表里找到 Note2Red。
+6. 打开 Note2Red 的开关。
+7. 如果没有看到插件，请重启 Obsidian，或回到第三方插件页面刷新列表。
+
+
+四、基本使用方法
+
+1. 打开一篇 Markdown 笔记。
+2. 点击左侧工具栏里的图片图标，或打开命令面板搜索“小红书图片预览”。
+3. 插件会读取当前笔记，并生成图片预览。
+4. 长文会按图片高度自动分页。
+5. 如果想手动指定换页，在正文中单独写一行：
+
+---
+
+6. 顶部工具栏可以切换主题、字体、字号和溢出策略。
+7. “眉 / 脚”按钮可以显示或隐藏页眉、页脚。
+8. 底部按钮可以导出当前页、导出全部页或导出长图。
+9. 如果开启封面功能，第一页会作为封面，后面才是正文分页。
+
+
+五、关于封面和 Gemini
+
+插件支持封面页，也支持使用 Gemini 生成封面图。
+
+如果你要使用 Gemini 生成封面：
+
+1. 进入 Obsidian 设置。
+2. 找到 Note2Red 插件设置。
+3. 在“封面与 Gemini”里填写自己的 Gemini API Key。
+4. 打开一篇笔记后，点击“生成封面”。
+
+注意：
+1. 请使用自己的 API Key。
+2. 不要把自己的 data.json 发给别人。
+3. 生成封面需要网络环境和模型服务可用。
+4. 如果不需要 AI 封面，也可以手动上传封面图，或者关闭封面功能。
+
+
+六、常见问题
+
+问题 1：插件列表里看不到 Note2Red
+
+请检查：
+1. 文件夹路径是不是：
+   你的仓库/.obsidian/plugins/obsidian-note2red/
+2. obsidian-note2red 文件夹里是否有 manifest.json、main.js、styles.css。
+3. 是否复制成了两层文件夹，例如：
+   plugins/obsidian-note2red/obsidian-note2red/manifest.json
+   如果是这样，需要把里面那层 obsidian-note2red 移到 plugins 下面。
+4. 重启 Obsidian。
+
+
+问题 2：打开插件后没有内容
+
+请检查：
+1. 当前打开的是 Markdown 笔记。
+2. 笔记里有正文内容。
+3. 切换到要导出的笔记后，再打开或刷新 Note2Red 预览。
+
+
+问题 3：表格或代码块太长
+
+可以在顶部工具栏切换溢出策略：
+
+切分：尽量把内容拆到下一页。
+缩放：把过高的表格或代码块缩小放入页面。
+换页：尽量保留内容块完整，放到下一页。
+
+
+问题 4：data.json 在哪里
+
+插件启用并修改设置后，会自动生成：
+
+你的仓库/.obsidian/plugins/obsidian-note2red/data.json
+
+这个文件保存个人设置，里面可能包含 Gemini API Key，不要分享给别人。
+
+
+七、卸载方法
+
+1. 在 Obsidian 设置中关闭 Note2Red 插件。
+2. 删除：
+   你的仓库/.obsidian/plugins/obsidian-note2red/
+
+如果只是不想用了，关闭插件即可，不一定要删除文件夹。
+
