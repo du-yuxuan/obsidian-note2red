@@ -19,6 +19,7 @@ interface RedSettings {
     showHeader?: boolean;
     showTime: boolean;
     timeFormat: string;
+    customTime?: string;
     showFooter?: boolean;
     overflowStrategy?: 'paginate' | 'scale' | 'native';
     textColor?: string;
@@ -31,11 +32,16 @@ interface RedSettings {
     coverPromptCustom?: string;
     geminiApiKey?: string;
     geminiImageModel?: string;
+    coverApiProvider?: 'gemini' | 'openai' | 'volcengine';
+    coverApiEndpoint?: string;
     coverSaveFolder?: string;
     coverManualImagePath?: string;
     footerLeftText: string;
     footerRightText: string;
     headingLevel: 'h1' | 'h2'; // 标题级别选项
+    contentBottomMargin: number; // 笔记下边距 (px)
+    imageWidthPercent: number; // 图片宽度百分比 (50-100)
+    imageHeights: Record<string, number>; // 单张图片自定义高度 (key=图片src, value=px)
     customFonts: { value: string; label: string; isPreset?: boolean }[];  // 添加自定义字体配置
     backgroundSettings: {
         imageUrl: string;
@@ -88,6 +94,8 @@ export const DEFAULT_SETTINGS: RedSettings = {
     coverPromptCustom: '',
     geminiApiKey: '',
     geminiImageModel: 'gemini-2.5-flash-image',
+    coverApiProvider: 'gemini',
+    coverApiEndpoint: 'https://api.openai.com/v1/images/generations',
     coverSaveFolder: '99_attachments/note-to-red-covers',
     coverManualImagePath: '',
     backgroundId: '',
@@ -101,7 +109,11 @@ export const DEFAULT_SETTINGS: RedSettings = {
     showHeader: false,
     showTime: true,
     timeFormat: 'zh-CN',
+    customTime: '',
     headingLevel: 'h2', // 默认使用二级标题
+    contentBottomMargin: 0, // 笔记下边距默认 0px
+    imageWidthPercent: 100, // 图片宽度默认 100%
+    imageHeights: {}, // 单张图片自定义高度
     footerLeftText: '让AI减少重复劳动',
     footerRightText: '微信公众号：八股仙人',
     customFonts: PRESET_FONTS,

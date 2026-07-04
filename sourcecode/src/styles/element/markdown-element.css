@@ -66,10 +66,16 @@
 
 /* 图片样式 */
 .red-image {
-    max-width: 100%;
+    max-width: var(--image-max-width, 100%);
     height: auto;
     display: block;
     margin: 1em auto;
+    cursor: pointer;
+    outline: none;
+}
+.red-image:focus,
+.red-image:focus-visible {
+    outline: none;
 }
 .red-scale-wrap {
     overflow: hidden;

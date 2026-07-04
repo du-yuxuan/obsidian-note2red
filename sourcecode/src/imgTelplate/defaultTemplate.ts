@@ -122,9 +122,12 @@ export class DefaultTemplate implements ImgTemplate {
 
     private createTimeSection(parent: HTMLElement, settings: any) {
         const userRight = parent.createEl('div', { cls: 'red-user-right' });
+        const timeText = (settings.customTime || '').trim()
+            ? settings.customTime.trim()
+            : new Date().toLocaleDateString(settings.timeFormat);
         userRight.createEl('div', {
             cls: 'red-post-time',
-            text: new Date().toLocaleDateString(settings.timeFormat)
+            text: timeText
         });
     }
 

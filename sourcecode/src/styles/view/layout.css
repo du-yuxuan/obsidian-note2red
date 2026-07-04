@@ -131,6 +131,7 @@
 .red-content-section {
     display: none;
     margin: 0 13px;
+    padding-bottom: var(--content-bottom-margin, 0px);
 }
 
 .red-content-section[data-index="0"] {
@@ -382,4 +383,60 @@
         opacity: 1;
         transform: translateY(0);
     }
+}
+
+/* 图片高度编辑弹出框 */
+.red-image-height-editor {
+    position: absolute;
+    z-index: 1001;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+}
+.red-image-height-editor input {
+    width: 60px;
+    height: 28px;
+    padding: 2px 6px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    font-size: 13px;
+    text-align: center;
+    outline: none;
+    box-shadow: none;
+}
+.red-image-height-editor input:focus {
+    border-color: var(--text-accent);
+    box-shadow: 0 0 0 1px var(--text-accent);
+}
+.red-image-height-editor label {
+    white-space: nowrap;
+    color: var(--text-muted);
+}
+.red-image-height-editor button {
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.red-image-height-editor button.mod-cta {
+    background: var(--text-accent);
+    color: var(--text-on-accent);
+    border-color: var(--text-accent);
+}
+.red-image-height-editor .red-image-height-reset {
+    color: var(--text-muted);
+    font-size: 11px;
+    cursor: pointer;
+    text-decoration: underline;
 }

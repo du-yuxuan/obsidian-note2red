@@ -2,9 +2,7 @@ import { ItemView, WorkspaceLeaf, MarkdownRenderer, TFile, Notice, setIcon } fro
 import { RedConverter } from './converter';
 import { DownloadManager } from './downloadManager';
 import type { ThemeManager } from './themeManager';
-import { DonateManager } from './donateManager';
 import type { SettingsManager } from './settings/settings';
-import { ClipboardManager } from './clipboardManager';
 import { ImgTemplateManager } from './imgTemplateManager';
 import { BackgroundSettingModal } from './modals/BackgroundSettingModal';
 import { BackgroundManager } from './backgroundManager';
@@ -19,11 +17,6 @@ export class RedView extends ItemView {
     private isPreviewLocked: boolean = false;
     private currentImageIndex: number = 0;
     private backgroundManager: BackgroundManager;
-    // 添加捐赠提醒相关属性
-    private donateCount: number = 0;
-    private lastDonatePrompt: number = 0;
-    private MAX_COUNT_BEFORE_PROMPT: number = 5; // 每使用5次提醒一次
-
     // UI 元素
     private lockButton: HTMLButtonElement;
     private copyButton: HTMLButtonElement;
@@ -63,10 +56,6 @@ export class RedView extends ItemView {
             this.themeManager
         );
 
-        // 从设置中恢复捐赠计数和上次提示时间
-        const settings = this.settingsManager.getSettings();
-        this.donateCount = settings.donateCount || 0;
-        this.lastDonatePrompt = settings.lastDonatePrompt || 0;
     }
 
     getViewType() {
@@ -104,9 +93,24 @@ export class RedView extends ItemView {
         await this.initializeLockButton(controlsGroup);
         await this.initializeChromeToggles(controlsGroup);
         await this.initializeThemeSelect(controlsGroup);
-        await this.initializeFontSelect(controlsGroup);
-        await this.initializeFontSizeControls(controlsGroup);
-        await this.initializeOverflowStrategySelect(controlsGroup);
+
+        // 折叠面板：字体、字号、溢出策略
+        const collapseToggle = controlsGroup.createEl('button', {
+            cls: 'red-toolbar-collapse-toggle',
+            attr: { 'aria-label': '更多设置', title: '更多设置' }
+        });
+        collapseToggle.setText('⚙');
+
+        const expandRow = toolbar.createEl('div', { cls: 'red-toolbar-expand' });
+        await this.initializeFontSelect(expandRow);
+        await this.initializeFontSizeControls(expandRow);
+        await this.initializeOverflowStrategySelect(expandRow);
+
+        collapseToggle.addEventListener('click', () => {
+            const isOpen = expandRow.classList.toggle('is-open');
+            collapseToggle.classList.toggle('is-active', isOpen);
+        });
+
         await this.restoreSettings();
     }
 
@@ -188,6 +192,11 @@ export class RedView extends ItemView {
         const sections = this.previewEl.querySelectorAll('.red-content-section');
         if (!this.navigationButtons) return;
 
+        // 页码越界保护：分页数减少后自动跳到最后一页
+        if (this.currentImageIndex >= sections.length) {
+            this.currentImageIndex = Math.max(0, sections.length - 1);
+        }
+
         sections.forEach((section, i) => {
             (section as HTMLElement).classList.toggle('red-section-active', i === this.currentImageIndex);
         });
@@ -212,10 +221,9 @@ export class RedView extends ItemView {
         const bottomBar = container.createEl('div', { cls: 'red-bottom-bar' });
         const bottomControlsGroup = bottomBar.createEl('div', { cls: 'red-controls-group' });
 
-        this.initializeHelpButton(bottomControlsGroup);
-        this.initializeCoverButton(bottomControlsGroup);
         this.initializeBackgroundButton(bottomControlsGroup);
-        this.initializeDonateButton(bottomControlsGroup);
+        this.initializeCoverButton(bottomControlsGroup);
+
         this.initializeExportButtons(bottomControlsGroup);
     }
 
@@ -226,7 +234,22 @@ export class RedView extends ItemView {
         this.registerEvent(
             this.app.vault.on('modify', this.onFileModify.bind(this))
         );
-        this.initializeCopyButtonListener();
+
+        // 图片点击 → 高度编辑
+        this.previewEl.addEventListener('click', (e) => {
+            const target = e.target as HTMLElement;
+            if (target.tagName === 'IMG' && target.classList.contains('red-image')) {
+                e.stopPropagation();
+                this.showImageHeightEditor(target as HTMLImageElement);
+            }
+        });
+        // 点击其他地方关闭编辑器
+        document.addEventListener('click', (e) => {
+            const editor = this.previewEl.querySelector('.red-image-height-editor');
+            if (editor && !editor.contains(e.target as Node)) {
+                editor.remove();
+            }
+        });
     }
     // #endregion
 
@@ -378,44 +401,22 @@ export class RedView extends ItemView {
         this.fontSizeSelect.addEventListener('change', updateFontSize);
     }
 
-    private initializeHelpButton(parent: HTMLElement) {
-        const helpButton = parent.createEl('button', {
-            cls: 'red-help-button',
-            attr: { 'aria-label': '使用指南' }
-        });
-        setIcon(helpButton, 'help');
-        parent.createEl('div', {
-            cls: 'red-help-tooltip',
-            text: `使用指南：
-                1. 打开一篇 Markdown 笔记后，插件会按图片高度自动分页，不再要求用标题拆分。
-                2. 想在指定位置换页时，在正文中单独插入 --- 分隔线。
-                3. 顶部可切换主题、字体、字号，以及表格/代码块溢出策略：切分、缩放、换页。
-                4. “眉 / 脚”按钮可快速显示或隐藏页眉、页脚，让正文区域更大。
-                5. 需要首图时，可开启封面页；也可以手动上传封面图或用 Gemini 生成封面。
-                6. 导出当前页用于单张调整，导出全部页用于批量生成，导出长图用于连续阅读。
-                7. 锁按钮用于暂停或恢复实时预览；解锁时编辑笔记会自动刷新预览。
-                8. 关于作者中可以查看作者信息与后续关注方式。`
-        });
-    }
-
-    private initializeDonateButton(parent: HTMLElement) {
-        const likeButton = parent.createEl('button', { cls: 'red-like-button' });
-        likeButton.createEl('span', {
-            text: '❤️',
-            attr: { style: 'margin-right: 4px' }
-        });
-        likeButton.createSpan({ text: '关于作者' });
-        likeButton.addEventListener('click', () => {
-            DonateManager.showDonateModal(this.containerEl);
-        });
-    }
-
     private initializeCoverButton(parent: HTMLElement) {
+        const apiKey = (this.settingsManager.getSettings().geminiApiKey || '').trim();
         this.coverGenButton = parent.createEl('button', {
             cls: 'red-cover-gen-button',
             text: '生成封面'
         });
+        if (!apiKey) {
+            this.coverGenButton.style.display = 'none';
+        }
         this.coverGenButton.addEventListener('click', () => this.onGenerateCoverClick());
+    }
+
+    private updateCoverButtonVisibility() {
+        if (!this.coverGenButton) return;
+        const apiKey = (this.settingsManager.getSettings().geminiApiKey || '').trim();
+        this.coverGenButton.style.display = apiKey ? '' : 'none';
     }
 
     private initializeExportButtons(parent: HTMLElement) {
@@ -427,11 +428,6 @@ export class RedView extends ItemView {
 
         singleDownloadButton.addEventListener('click', async () => {
             if (this.previewEl) {
-                // 检查是否需要显示捐赠弹窗
-                if (this.shouldShowDonatePrompt()) {
-                    DonateManager.showDonateModal(this.containerEl);
-                }
-
                 singleDownloadButton.disabled = true;
                 singleDownloadButton.setText('导出中...');
 
@@ -457,11 +453,6 @@ export class RedView extends ItemView {
 
         this.copyButton.addEventListener('click', async () => {
             if (this.previewEl) {
-                // 检查是否需要显示捐赠弹窗
-                if (this.shouldShowDonatePrompt()) {
-                    DonateManager.showDonateModal(this.containerEl);
-                }
-
                 this.copyButton.disabled = true;
                 this.copyButton.setText('导出中...');
 
@@ -486,10 +477,6 @@ export class RedView extends ItemView {
 
         longImageButton.addEventListener('click', async () => {
             if (this.previewEl) {
-                if (this.shouldShowDonatePrompt()) {
-                    DonateManager.showDonateModal(this.containerEl);
-                }
-
                 longImageButton.disabled = true;
                 longImageButton.setText('导出中...');
 
@@ -508,37 +495,6 @@ export class RedView extends ItemView {
         });
     }
 
-    private initializeCopyButtonListener() {
-        const copyButtonHandler = async (e: CustomEvent) => {
-            const { copyButton } = e.detail;
-            if (copyButton) {
-                copyButton.addEventListener('click', async () => {
-                    copyButton.disabled = true;
-                    try {
-                        // 检查是否需要显示捐赠弹窗
-                        if (this.shouldShowDonatePrompt()) {
-                            DonateManager.showDonateModal(this.containerEl);
-                        }
-
-                        await ClipboardManager.copyImageToClipboard(this.previewEl);
-                        new Notice('图片已复制到剪贴板');
-                    } catch (error) {
-                        new Notice('复制失败');
-                        console.error('复制图片失败:', error);
-                    } finally {
-                        setTimeout(() => {
-                            copyButton.disabled = false;
-                        }, 1000);
-                    }
-                });
-            }
-        };
-
-        this.containerEl.addEventListener('copy-button-added', copyButtonHandler as EventListener);
-        this.register(() => {
-            this.containerEl.removeEventListener('copy-button-added', copyButtonHandler as EventListener);
-        });
-    }
     // #endregion
 
     // #region 设置管理
@@ -665,7 +621,9 @@ export class RedView extends ItemView {
         this.previewEl.dataset.noteTitle = this.currentFile.basename.replace(/\.md$/i, '');
         this.previewEl.dataset.notePath = this.currentFile.path;
 
-        const content = await this.app.vault.cachedRead(this.currentFile);
+        let content = await this.app.vault.cachedRead(this.currentFile);
+        // 自动去除 YAML frontmatter 属性文字
+        content = content.replace(/^---[\s\S]*?---\n*/, '');
         await MarkdownRenderer.render(
             this.app,
             content,
@@ -690,13 +648,27 @@ export class RedView extends ItemView {
             this.themeManager.applyTheme(this.previewEl);
             await this.syncCoverPage();
             this.themeManager.applyTheme(this.previewEl);
-            // 应用当前背景设置
+            // 应用当前背景设置和边距
             const settings = this.settingsManager.getSettings();
-            if (settings.backgroundSettings.imageUrl) {
-                const previewContainer = this.previewEl.querySelector('.red-image-preview');
-                if (previewContainer) {
-                    this.backgroundManager.applyBackgroundStyles(previewContainer as HTMLElement, settings.backgroundSettings);
+            const imagePreview = this.previewEl.querySelector('.red-image-preview');
+            if (imagePreview) {
+                const ipEl = imagePreview as HTMLElement;
+                // 应用笔记下边距
+                ipEl.style.setProperty(
+                    '--content-bottom-margin',
+                    `${settings.contentBottomMargin ?? 0}px`
+                );
+                // 应用图片宽度
+                ipEl.style.setProperty(
+                    '--image-max-width',
+                    `${settings.imageWidthPercent ?? 100}%`
+                );
+                // 应用背景
+                if (settings.backgroundSettings.imageUrl) {
+                    this.backgroundManager.applyBackgroundStyles(ipEl, settings.backgroundSettings);
                 }
+                // 应用单张图片高度
+                this.applyImageHeights();
             }
         }
 
@@ -883,11 +855,7 @@ export class RedView extends ItemView {
             const excerpt = CoverGenerator.extractExcerpt(content);
             const title = this.currentFile.basename.replace(/\.md$/i, '');
             const prompt = CoverGenerator.buildImagePrompt(title, excerpt, settings);
-            const b64 = await CoverGenerator.geminiGenerateImageBase64(
-                apiKey,
-                settings.geminiImageModel || 'gemini-2.5-flash-image',
-                prompt
-            );
+            const b64 = await CoverGenerator.generateImage(settings, prompt);
             const binStr = atob(b64);
             const bytes = new Uint8Array(binStr.length);
             for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
@@ -1065,37 +1033,119 @@ export class RedView extends ItemView {
     }
     // #endregion
 
-
-    // 检查是否需要显示捐赠弹窗
-    private shouldShowDonatePrompt(): boolean {
-        // 增加使用次数
-        this.donateCount++;
-
-        // 保存到设置中
-        if (this.settingsManager) {
-            const settings = this.settingsManager.getSettings();
-            settings.donateCount = this.donateCount;
-            this.settingsManager.updateSettings(settings);
-        }
-
-        const now = Date.now();
-        const oneDayInMs = 24 * 60 * 60 * 1000; // 一天的毫秒数
-
-        // 如果使用次数达到阈值且24小时内未显示过
-        if (this.donateCount % this.MAX_COUNT_BEFORE_PROMPT === 0 && now - this.lastDonatePrompt > oneDayInMs) {
-            // 更新上次显示时间
-            this.lastDonatePrompt = now;
-
-            // 保存到设置中
-            if (this.settingsManager) {
-                const settings = this.settingsManager.getSettings();
-                settings.lastDonatePrompt = this.lastDonatePrompt;
-                this.settingsManager.updateSettings(settings);
+    // #region 图片高度控制
+    private applyImageHeights() {
+        const settings = this.settingsManager.getSettings();
+        const heights = settings.imageHeights || {};
+        const images = this.previewEl.querySelectorAll<HTMLImageElement>('img.red-image');
+        images.forEach(img => {
+            const key = this.getImageKey(img);
+            const h = heights[key];
+            if (h && h > 0) {
+                img.style.height = `${h}px`;
+                img.style.width = 'auto';
+                img.style.maxWidth = 'none';
+                img.dataset.customHeight = String(h);
+            } else {
+                img.style.height = '';
+                img.style.width = '';
+                img.style.maxWidth = '';
+                delete img.dataset.customHeight;
             }
-
-            return true;
-        }
-
-        return false;
+        });
     }
+
+    private getImageKey(img: HTMLImageElement): string {
+        try {
+            const url = new URL(img.src, window.location.origin);
+            return url.pathname || img.src;
+        } catch {
+            return img.src;
+        }
+    }
+
+    private showImageHeightEditor(img: HTMLImageElement) {
+        // 移除已有编辑器
+        const existing = this.previewEl.querySelector('.red-image-height-editor');
+        if (existing) existing.remove();
+
+        const settings = this.settingsManager.getSettings();
+        const key = this.getImageKey(img);
+        const currentHeight = (settings.imageHeights || {})[key] || '';
+
+        const editor = document.createElement('div');
+        editor.className = 'red-image-height-editor';
+
+        const label = document.createElement('label');
+        label.textContent = '高度(px):';
+        editor.appendChild(label);
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = '0';
+        input.step = '10';
+        input.placeholder = 'auto';
+        input.value = String(currentHeight);
+        editor.appendChild(input);
+
+        const applyBtn = document.createElement('button');
+        applyBtn.className = 'mod-cta';
+        applyBtn.textContent = '确定';
+        applyBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const val = parseInt(input.value, 10);
+            const h = isNaN(val) || val <= 0 ? 0 : val;
+            const imageHeights = { ...(settings.imageHeights || {}) };
+            if (h > 0) {
+                imageHeights[key] = h;
+            } else {
+                delete imageHeights[key];
+            }
+            await this.settingsManager.updateSettings({ imageHeights });
+            editor.remove();
+            // 重新预览以触发分页重算，文字自动跟进
+            await this.updatePreview();
+        });
+        editor.appendChild(applyBtn);
+
+        const resetBtn = document.createElement('span');
+        resetBtn.className = 'red-image-height-reset';
+        resetBtn.textContent = '重置';
+        resetBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const imageHeights = { ...(settings.imageHeights || {}) };
+            delete imageHeights[key];
+            await this.settingsManager.updateSettings({ imageHeights });
+            editor.remove();
+            // 重新预览以触发分页重算
+            await this.updatePreview();
+        });
+        editor.appendChild(resetBtn);
+
+        // 定位编辑器在图片上方
+        const imgRect = img.getBoundingClientRect();
+        const previewRect = this.previewEl.getBoundingClientRect();
+        editor.style.left = `${imgRect.left - previewRect.left + (imgRect.width - 220) / 2}px`;
+        editor.style.top = `${imgRect.top - previewRect.top - 44}px`;
+
+        // 确保编辑器在 previewEl 内部
+        this.previewEl.style.position = this.previewEl.style.position || 'relative';
+        this.previewEl.appendChild(editor);
+
+        input.focus();
+        input.select();
+
+        // Enter 键快速确认
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                applyBtn.click();
+            }
+            if (e.key === 'Escape') {
+                editor.remove();
+            }
+        });
+    }
+    // #endregion
+
 }

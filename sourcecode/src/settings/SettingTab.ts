@@ -53,11 +53,11 @@ export class RedSettingTab extends PluginSettingTab {
         containerEl.empty();
         containerEl.addClass('red-settings');
 
-        containerEl.createEl('h2', { text: 'Note2Red 设置' });
+        containerEl.createEl('h2', { text: '⚙ Note2Red 设置' });
 
-        this.createSection(containerEl, '基本设置', el => this.renderBasicSettings(el));
-        this.createSection(containerEl, '主题设置', el => this.renderThemeSettings(el));
-        this.createSection(containerEl, '封面与 Gemini', el => this.renderCoverSettings(el));
+        this.createSection(containerEl, '📄 基本设置', el => this.renderBasicSettings(el));
+        this.createSection(containerEl, '🎨 主题设置', el => this.renderThemeSettings(el));
+        this.createSection(containerEl, '🤖 封面与 AI 生图', el => this.renderCoverSettings(el));
     }
 
     private async refreshActiveViews() {
@@ -137,21 +137,75 @@ export class RedSettingTab extends PluginSettingTab {
             });
 
         new Setting(containerEl)
-            .setName('Gemini API Key')
-            .setDesc('Google AI Studio 申请；密钥保存在插件 data.json 中，请勿泄露仓库。')
+            .setName('AI 接口')
+            .setDesc('选择生成封面使用的 AI 服务')
+            .addDropdown(dropdown => dropdown
+                .addOption('gemini', 'Google Gemini')
+                .addOption('openai', 'OpenAI / 兼容接口')
+                .addOption('volcengine', '火山引擎 (豆包/即梦)')
+                .setValue(settings().coverApiProvider || 'gemini')
+                .onChange(async value => {
+                    await this.plugin.settingsManager.updateSettings({ coverApiProvider: value as 'gemini' | 'openai' | 'volcengine' });
+                    this.display();
+                })
+            );
+
+        const provider = settings().coverApiProvider || 'gemini';
+        const keyDescs: Record<string, string> = {
+            gemini: 'Google AI Studio 申请。密钥请勿泄露。',
+            openai: 'OpenAI 或兼容服务的 API Key，如 sk-...',
+            volcengine: '火山引擎 Ark API Key。在火山引擎控制台获取。'
+        };
+        const keyPlaceholders: Record<string, string> = {
+            gemini: 'AIza...',
+            openai: 'sk-...',
+            volcengine: '请输入火山引擎 API Key'
+        };
+        const modelDescs: Record<string, string> = {
+            gemini: '默认 gemini-2.5-flash-image',
+            openai: '如 dall-e-3, dall-e-2',
+            volcengine: '如 doubao-seedream-3-0-t2i-250415'
+        };
+        const modelPlaceholders: Record<string, string> = {
+            gemini: 'gemini-2.5-flash-image',
+            openai: 'dall-e-3',
+            volcengine: 'doubao-seedream-3-0-t2i-250415'
+        };
+
+        new Setting(containerEl)
+            .setName('API Key')
+            .setDesc(keyDescs[provider] || keyDescs.gemini)
             .addText(text => {
                 text.inputEl.type = 'password';
-                text.setPlaceholder('AIza...');
+                text.setPlaceholder(keyPlaceholders[provider] || '');
                 text.setValue(settings().geminiApiKey || '');
                 text.onChange(async value => {
                     await this.plugin.settingsManager.updateSettings({ geminiApiKey: value.trim() });
                 });
             });
 
+        if (provider === 'openai' || provider === 'volcengine') {
+            const epDefaults: Record<string, string> = {
+                openai: 'https://api.openai.com/v1/images/generations',
+                volcengine: 'https://ark.cn-beijing.volces.com/api/v3/images/generations'
+            };
+            new Setting(containerEl)
+                .setName('API 端点')
+                .setDesc(provider === 'volcengine' ? '火山引擎图片生成端点，默认北京region。' : 'OpenAI 兼容的图片生成端点。')
+                .addText(text => {
+                    text.setPlaceholder(epDefaults[provider] || '');
+                    text.setValue(settings().coverApiEndpoint || '');
+                    text.onChange(async value => {
+                        await this.plugin.settingsManager.updateSettings({ coverApiEndpoint: value.trim() });
+                    });
+                });
+        }
+
         new Setting(containerEl)
             .setName('生图模型 ID')
-            .setDesc('默认 gemini-2.5-flash-image。若报错可改为 gemini-2.0-flash-preview-image-generation 等官方文档列出的生图模型。')
+            .setDesc(modelDescs[provider] || modelDescs.gemini)
             .addText(text => {
+                text.setPlaceholder(modelPlaceholders[provider] || '');
                 text.setValue(settings().geminiImageModel || '');
                 text.onChange(async value => {
                     await this.plugin.settingsManager.updateSettings({ geminiImageModel: value.trim() });
@@ -288,39 +342,75 @@ export class RedSettingTab extends PluginSettingTab {
     }
 
     private renderBasicSettings(containerEl: HTMLElement): void {
-        // 排版管理区域
-        const typographySection = containerEl.createDiv('red-settings-subsection');
-        const typographyHeader = typographySection.createDiv('red-settings-subsection-header');
-        const typographyToggle = typographyHeader.createSpan('red-settings-subsection-toggle');
-        setIcon(typographyToggle, 'chevron-right');
-        
-        typographyHeader.createEl('h3', { text: '维护说明' });
-        
-        const typographyContent = typographySection.createDiv('red-settings-subsection-content');
-        
-        // 折叠/展开逻辑
-        typographyHeader.addEventListener('click', () => {
-            const isExpanded = !typographySection.hasClass('is-expanded');
-            typographySection.toggleClass('is-expanded', isExpanded);
-            setIcon(typographyToggle, isExpanded ? 'chevron-down' : 'chevron-right');
+        // 使用说明
+        const tip = containerEl.createDiv('red-settings-tip');
+        tip.createSpan({ text: '💡 按页面高度自动分页；手动换页在正文中插入 --- 分隔线即可。' });
+
+        // 笔记下边距调节
+        const settings = () => this.plugin.settingsManager.getSettings();
+        const marginSetting = new Setting(containerEl)
+            .setName('笔记下边距')
+            .setDesc('调整内容区域底部的留白空间，数值越大底部空白越多');
+
+        const marginValueEl = document.createElement('span');
+        marginValueEl.style.cssText = 'min-width: 36px; text-align: center; font-weight: 600; font-size: 14px;';
+        marginValueEl.textContent = `${settings().contentBottomMargin ?? 0}px`;
+
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.min = '0';
+        slider.max = '60';
+        slider.step = '2';
+        slider.value = String(settings().contentBottomMargin ?? 0);
+        slider.style.cssText = 'flex: 1; margin: 0 8px;';
+        slider.addEventListener('input', () => {
+            marginValueEl.textContent = `${slider.value}px`;
+        });
+        slider.addEventListener('change', async () => {
+            const val = parseInt(slider.value, 10);
+            await this.plugin.settingsManager.updateSettings({ contentBottomMargin: val });
+            await this.refreshActiveViews();
         });
 
-        typographyContent.createEl('p', {
-            text: '当前版本按页面高度自动分页；如需手动换页，在正文中插入 --- 分隔线。',
-            cls: 'setting-item-description'
+        marginSetting.settingEl.appendChild(slider);
+        marginSetting.settingEl.appendChild(marginValueEl);
+
+        // 图片宽度调节
+        const imgWidthSetting = new Setting(containerEl)
+            .setName('图片宽度')
+            .setDesc('调整图片最大宽度占页面宽度的百分比。100% 为刚好不超出页宽');
+
+        const imgWidthValueEl = document.createElement('span');
+        imgWidthValueEl.style.cssText = 'min-width: 36px; text-align: center; font-weight: 600; font-size: 14px;';
+        imgWidthValueEl.textContent = `${settings().imageWidthPercent ?? 100}%`;
+
+        const imgWidthSlider = document.createElement('input');
+        imgWidthSlider.type = 'range';
+        imgWidthSlider.min = '50';
+        imgWidthSlider.max = '100';
+        imgWidthSlider.step = '5';
+        imgWidthSlider.value = String(settings().imageWidthPercent ?? 100);
+        imgWidthSlider.style.cssText = 'flex: 1; margin: 0 8px;';
+        imgWidthSlider.addEventListener('input', () => {
+            imgWidthValueEl.textContent = `${imgWidthSlider.value}%`;
         });
+        imgWidthSlider.addEventListener('change', async () => {
+            const val = parseInt(imgWidthSlider.value, 10);
+            await this.plugin.settingsManager.updateSettings({ imageWidthPercent: val });
+            await this.refreshActiveViews();
+        });
+
+        imgWidthSetting.settingEl.appendChild(imgWidthSlider);
+        imgWidthSetting.settingEl.appendChild(imgWidthValueEl);
 
         // 字体管理区域
         const fontSection = containerEl.createDiv('red-settings-subsection');
         const fontHeader = fontSection.createDiv('red-settings-subsection-header');
         const fontToggle = fontHeader.createSpan('red-settings-subsection-toggle');
         setIcon(fontToggle, 'chevron-right');
-        
-        fontHeader.createEl('h3', { text: '字体管理' });
-        
+        fontHeader.createEl('h3', { text: '🔤 字体管理' });
         const fontContent = fontSection.createDiv('red-settings-subsection-content');
-        
-        // 折叠/展开逻辑
+
         fontHeader.addEventListener('click', () => {
             const isExpanded = !fontSection.hasClass('is-expanded');
             fontSection.toggleClass('is-expanded', isExpanded);
@@ -328,326 +418,130 @@ export class RedSettingTab extends PluginSettingTab {
         });
 
         // 字体列表
-        const fontList = fontContent.createDiv('font-management');
-        this.plugin.settingsManager.getFontOptions().forEach(font => {
-            const fontItem = fontList.createDiv('font-item');
-            const setting = new Setting(fontItem)
-                .setName(font.label)
-                .setDesc(font.value);
-
-            // 只为非预设字体添加编辑和删除按钮
-            if (!font.isPreset) {
-                setting
-                    .addExtraButton(btn => 
-                        btn.setIcon('pencil')
-                            .setTooltip('编辑')
-                            .onClick(() => {
-                                new CreateFontModal(
-                                    this.app,
-                                    async (updatedFont) => {
-                                        await this.plugin.settingsManager.updateFont(font.value, updatedFont);
-                                        this.display();
-                                        new Notice('请重启 Obsidian 或重新加载以使更改生效');
-                                    },
-                                    font
-                                ).open();
-                            }))
-                    .addExtraButton(btn => 
-                        btn.setIcon('trash')
-                            .setTooltip('删除')
-                            .onClick(() => {
-                                // 新增确认模态框
-                                new ConfirmModal(
-                                    this.app,
-                                    '确认删除字体',
-                                    `确定要删除「${font.label}」字体配置吗？`,
-                                    async () => {
-                                        await this.plugin.settingsManager.removeFont(font.value);
-                                        this.display();
-                                        new Notice('请重启 Obsidian 或重新加载以使更改生效');
-                                    }
-                                ).open();
-                            }));
-            }
+        const fontList = fontContent.createDiv('red-setting-list');
+        const fonts = this.plugin.settingsManager.getFontOptions();
+        fonts.filter(f => f.isPreset).forEach(font => {
+            fontList.createDiv('red-setting-list-item red-setting-list-item--preset').createSpan({ text: `${font.label}（${font.value}）` });
+        });
+        fonts.filter(f => !f.isPreset).forEach(font => {
+            const row = fontList.createDiv('red-setting-list-item');
+            row.createSpan({ text: `${font.label}（${font.value}）` });
+            const actions = row.createDiv('red-setting-list-actions');
+            const editBtn = actions.createEl('button', { cls: 'red-setting-btn-icon', attr: { 'aria-label': '编辑' } });
+            setIcon(editBtn, 'pencil');
+            editBtn.addEventListener('click', () => {
+                new CreateFontModal(this.app, async (updatedFont) => {
+                    await this.plugin.settingsManager.updateFont(font.value, updatedFont);
+                    this.display();
+                }, font).open();
+            });
+            const delBtn = actions.createEl('button', { cls: 'red-setting-btn-icon', attr: { 'aria-label': '删除' } });
+            setIcon(delBtn, 'trash');
+            delBtn.addEventListener('click', () => {
+                new ConfirmModal(this.app, '确认删除字体', `确定要删除「${font.label}」吗？`, async () => {
+                    await this.plugin.settingsManager.removeFont(font.value);
+                    this.display();
+                }).open();
+            });
         });
 
-        // 添加新字体按钮
         new Setting(fontContent)
-            .addButton(btn => btn
-                .setButtonText('+ 添加字体')
-                .setCta()
-                .onClick(() => {
-                    new CreateFontModal(
-                        this.app,
-                        async (newFont) => {
-                            await this.plugin.settingsManager.addCustomFont(newFont);
-                            this.display();
-                            new Notice('请重启 Obsidian 或重新加载以使更改生效');
-                        }
-                    ).open();
-                }));
+            .setClass('red-setting-add-btn')
+            .addButton(btn => btn.setButtonText('+ 添加字体').setCta().onClick(() => {
+                new CreateFontModal(this.app, async (newFont) => {
+                    await this.plugin.settingsManager.addCustomFont(newFont);
+                    this.display();
+                }).open();
+            }));
     }
 
     private renderThemeSettings(containerEl: HTMLElement): void {
-        // 主题显示设置部分
-        const themeVisibilitySection = containerEl.createDiv('red-settings-subsection');
-        const themeVisibilityHeader = themeVisibilitySection.createDiv('red-settings-subsection-header');
-        
-        const themeVisibilityToggle = themeVisibilityHeader.createSpan('red-settings-subsection-toggle');
-        setIcon(themeVisibilityToggle, 'chevron-right');
-        
-        themeVisibilityHeader.createEl('h3', { text: '显示设置' });
-        
-        const themeVisibilityContent = themeVisibilitySection.createDiv('red-settings-subsection-content');
-        
-        // 折叠/展开逻辑
-        themeVisibilityHeader.addEventListener('click', () => {
-            const isExpanded = !themeVisibilitySection.hasClass('is-expanded');
-            themeVisibilitySection.toggleClass('is-expanded', isExpanded);
-            setIcon(themeVisibilityToggle, isExpanded ? 'chevron-down' : 'chevron-right');
-        });
+        const settings = () => this.plugin.settingsManager.getSettings();
 
         const refreshActiveViews = async () => {
             const leaves = this.plugin.app.workspace.getLeavesOfType(VIEW_TYPE_RED);
             for (const leaf of leaves) {
                 const view = leaf.view as any;
                 if (view && typeof view.updatePreview === 'function') {
-                    if (typeof view.syncChromeToggleButtons === 'function') {
-                        view.syncChromeToggleButtons();
-                    }
+                    if (typeof view.syncChromeToggleButtons === 'function') view.syncChromeToggleButtons();
                     await view.updatePreview();
                 }
             }
         };
-        
-        new Setting(themeVisibilityContent)
-            .setName('是否显示页眉（头像和用户信息）')
-            .setDesc('关闭后文字区域会自动扩大，每页容纳更多内容')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settingsManager.getSettings().showHeader === true)
-                .onChange(async (value) => {
-                    await this.plugin.settingsManager.updateSettings({
-                        showHeader: value
-                    });
-                    await refreshActiveViews();
-                })
-            );
 
-        new Setting(themeVisibilityContent)
-            .setName('是否显示时间')
-            .setDesc('需先开启页眉；打开后时间显示在用户信息右侧')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settingsManager.getSettings().showTime !== false)
-                .onChange(async (value) => {
-                    await this.plugin.settingsManager.updateSettings({
-                        showTime: value
-                    });
-                    await refreshActiveViews();
-                })
-            );
+        // -- 显示设置 --
+        const visibilitySection = containerEl.createDiv('red-settings-subsection');
+        const visHeader = visibilitySection.createDiv('red-settings-subsection-header');
+        const visToggle = visHeader.createSpan('red-settings-subsection-toggle');
+        setIcon(visToggle, 'chevron-right');
+        visHeader.createEl('h3', { text: '👁 显示设置' });
+        const visContent = visibilitySection.createDiv('red-settings-subsection-content');
+        visHeader.addEventListener('click', () => {
+            const open = !visibilitySection.hasClass('is-expanded');
+            visibilitySection.toggleClass('is-expanded', open);
+            setIcon(visToggle, open ? 'chevron-down' : 'chevron-right');
+        });
 
-        // 添加页脚显示设置
-        new Setting(themeVisibilityContent)
-            .setName('是否显示页脚')
-            .setDesc('控制是否在主题中显示页脚部分')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settingsManager.getSettings().showFooter !== false)
-                .onChange(async (value) => {
-                    await this.plugin.settingsManager.updateSettings({
-                        showFooter: value
-                    });
-                    await refreshActiveViews();
-                })
-            );
-
-        new Setting(themeVisibilityContent)
-            .setName('全局文字颜色')
-            .setDesc('留空则跟随主题默认色。填写后对正文、列表、引用、标题、表格等生效。')
-            .addText(text => {
-                text.setPlaceholder('#333333');
-                text.setValue(this.plugin.settingsManager.getSettings().textColor || '');
-                text.onChange(async value => {
-                    await this.plugin.settingsManager.updateSettings({ textColor: value.trim() });
-                    await refreshActiveViews();
-                });
-            })
-            .addButton(button => button
-                .setButtonText('清空')
-                .onClick(async () => {
-                    await this.plugin.settingsManager.updateSettings({ textColor: '' });
-                    await refreshActiveViews();
-                    this.display();
-                })
-            );
-   
-        themeVisibilityContent.createEl('hr', { cls: 'red-settings-divider' });
-
-        // 主题选择容器
-        const themeSelectionContainer = themeVisibilityContent.createDiv('theme-selection-container');
-        
-        // 左侧：所有主题列表
-        const allThemesContainer = themeSelectionContainer.createDiv('all-themes-container');
-        allThemesContainer.createEl('h4', { text: '隐藏主题' });
-        const allThemesList = allThemesContainer.createDiv('themes-list');
-        
-        // 中间：控制按钮
-        const controlButtonsContainer = themeSelectionContainer.createDiv('control-buttons-container');
-        const addButton = controlButtonsContainer.createEl('button', { text: '>' });
-        const removeButton = controlButtonsContainer.createEl('button', { text: '<' });
-
-        // 右侧：显示的主题列表
-        const visibleThemesContainer = themeSelectionContainer.createDiv('visible-themes-container');
-        visibleThemesContainer.createEl('h4', { text: '显示主题' });
-        const visibleThemesList = visibleThemesContainer.createDiv('themes-list');
-        
-        
-        
-        // 获取所有主题
-        const allThemes = this.plugin.settingsManager.getAllThemes();
-        
-        // 渲染主题列表
-        const renderThemeLists = () => {
-            // 清空列表
-            allThemesList.empty();
-            visibleThemesList.empty();
-            
-            // 填充左侧列表（所有未显示的主题）
-            allThemes
-                .filter(theme => theme.isVisible === false)
-                .forEach(theme => {
-                    const themeItem = allThemesList.createDiv('theme-list-item');
-                    themeItem.textContent = theme.name;
-                    themeItem.dataset.themeId = theme.id;
-                    
-                    // 点击选中/取消选中
-                    themeItem.addEventListener('click', () => {
-                        themeItem.toggleClass('selected', !themeItem.hasClass('selected'));
-                    });
-                });
-            
-            // 填充右侧列表（所有显示的主题）
-            allThemes
-                .filter(theme => theme.isVisible !== false) // 默认显示
-                .forEach(theme => {
-                    const themeItem = visibleThemesList.createDiv('theme-list-item');
-                    themeItem.textContent = theme.name;
-                    themeItem.dataset.themeId = theme.id;
-                    
-                    // 点击选中/取消选中
-                    themeItem.addEventListener('click', () => {
-                        themeItem.toggleClass('selected', !themeItem.hasClass('selected'));
-                    });
-                });
+        const addToggle = (name: string, desc: string, get: () => boolean, set: (v: boolean) => Promise<void>) => {
+            new Setting(visContent).setName(name).setDesc(desc).addToggle(t => t.setValue(get()).onChange(set));
         };
-        
-        // 初始渲染
-        renderThemeLists();
-        
-        // 添加按钮事件
-        addButton.addEventListener('click', async () => {
-            const selectedItems = Array.from(allThemesList.querySelectorAll('.theme-list-item.selected'));
-            if (selectedItems.length === 0) return;
-            
-            for (const item of selectedItems) {
-                const themeId = (item as HTMLElement).dataset.themeId;
-                if (!themeId) continue;
-                
-                const theme = allThemes.find(t => t.id === themeId);
-                if (theme) {
-                    theme.isVisible = true;
-                    await this.plugin.settingsManager.updateTheme(themeId, theme);
-                }
-            }
-            
-            renderThemeLists();
-            new Notice('请重启 Obsidian 或重新加载以使更改生效');
-        });
-        
-        // 移除按钮事件
-        removeButton.addEventListener('click', async () => {
-            const selectedItems = Array.from(visibleThemesList.querySelectorAll('.theme-list-item.selected'));
-            if (selectedItems.length === 0) return;
-            
-            for (const item of selectedItems) {
-                const themeId = (item as HTMLElement).dataset.themeId;
-                if (!themeId) continue;
-                
-                const theme = allThemes.find(t => t.id === themeId);
-                if (theme) {
-                    theme.isVisible = false;
-                    await this.plugin.settingsManager.updateTheme(themeId, theme);
-                }
-            }
-            
-            renderThemeLists();
-            new Notice('请重启 Obsidian 或重新加载以使更改生效');
+
+        addToggle('显示页眉（头像和用户信息）', '关闭后文字区域会自动扩大',
+            () => settings().showHeader === true,
+            async (v) => { await this.plugin.settingsManager.updateSettings({ showHeader: v }); await refreshActiveViews(); });
+        addToggle('显示时间', '需先开启页眉；时间显示在用户信息右侧',
+            () => settings().showTime !== false,
+            async (v) => { await this.plugin.settingsManager.updateSettings({ showTime: v }); await refreshActiveViews(); });
+        addToggle('显示页脚', '控制是否在主题中显示页脚部分',
+            () => settings().showFooter !== false,
+            async (v) => { await this.plugin.settingsManager.updateSettings({ showFooter: v }); await refreshActiveViews(); });
+
+        new Setting(visContent).setName('自定义时间').setDesc('填后替换当天日期；留空自动显示当天')
+            .addText(text => text.setPlaceholder('如：2025年6月19日').setValue(settings().customTime || '')
+                .onChange(async v => { await this.plugin.settingsManager.updateSettings({ customTime: v.trim() }); await refreshActiveViews(); }));
+        new Setting(visContent).setName('全局文字颜色').setDesc('留空跟随主题；填写后对所有文字生效')
+            .addText(text => text.setPlaceholder('#333333').setValue(settings().textColor || '')
+                .onChange(async v => { await this.plugin.settingsManager.updateSettings({ textColor: v.trim() }); await refreshActiveViews(); }))
+            .addButton(btn => btn.setButtonText('清空').onClick(async () => { await this.plugin.settingsManager.updateSettings({ textColor: '' }); await refreshActiveViews(); this.display(); }));
+
+        visContent.createEl('hr', { cls: 'red-settings-divider' });
+
+        // -- 主题可见性 --
+        visContent.createEl('h4', { text: '主题可见性', cls: 'red-setting-group-title' });
+        const allThemes = this.plugin.settingsManager.getAllThemes();
+        const toggleList = visContent.createDiv('red-setting-list');
+        allThemes.forEach(theme => {
+            const row = toggleList.createDiv('red-setting-list-item');
+            const info = row.createDiv('red-setting-list-info');
+            info.createSpan({ text: theme.name });
+            if (theme.isPreset) info.createSpan({ text: '内置', cls: 'red-setting-badge' });
+            new Setting(row).setClass('red-setting-list-toggle').addToggle(t => t.setValue(theme.isVisible !== false)
+                .onChange(async v => { theme.isVisible = v; await this.plugin.settingsManager.updateTheme(theme.id, theme); }));
         });
 
-        // 主题管理区域
-        const themeList = containerEl.createDiv('theme-management');
-        // 渲染自定义主题
-        themeList.createEl('h4', { text: '自定义主题', cls: 'theme-custom-header' });
-        this.plugin.settingsManager.getAllThemes()
-            .filter(theme => !theme.isPreset)
-            .forEach(theme => {
-                const themeItem = themeList.createDiv('theme-item');
-                new Setting(themeItem)
-                    .setName(theme.name)
-                    .setDesc(theme.description)
-                    .addExtraButton(btn => 
-                        btn.setIcon('eye')
-                            .setTooltip('预览')
-                            .onClick(() => {
-                                new ThemePreviewModal(this.app, this.plugin.settingsManager, theme, this.plugin.themeManager).open(); // 修改为使用预览模态框
-                            }))
-                    .addExtraButton(btn => 
-                        btn.setIcon('pencil')
-                            .setTooltip('编辑')
-                            .onClick(() => {
-                                new CreateThemeModal(
-                                    this.app,
-                                    this.plugin,
-                                    (updatedTheme) => {
-                                        this.plugin.settingsManager.updateTheme(theme.id, updatedTheme);
-                                        this.display();
-                                        new Notice('请重启 Obsidian 或重新加载以使更改生效');
-                                    },
-                                    theme
-                                ).open();
-                            }))
-                    .addExtraButton(btn => 
-                        btn.setIcon('trash')
-                            .setTooltip('删除')
-                            .onClick(() => {
-                                // 新增确认模态框
-                                new ConfirmModal(
-                                    this.app,
-                                    '确认删除主题',
-                                    `确定要删除「${theme.name}」主题吗？此操作不可恢复。`,
-                                    async () => {
-                                        await this.plugin.settingsManager.removeTheme(theme.id);
-                                        this.display();
-                                        new Notice('请重启 Obsidian 或重新加载以使更改生效');
-                                    }
-                                ).open();
-                            }));
+        // -- 自定义主题管理 --
+        const customThemes = allThemes.filter(t => !t.isPreset);
+        if (customThemes.length > 0) {
+            containerEl.createEl('hr', { cls: 'red-settings-divider' });
+            containerEl.createEl('h4', { text: '🎨 自定义主题', cls: 'red-setting-group-title' });
+            const themeList = containerEl.createDiv('red-setting-list');
+            customThemes.forEach(theme => {
+                const row = themeList.createDiv('red-setting-list-item');
+                row.createDiv('red-setting-list-info').createSpan({ text: theme.name });
+                const actions = row.createDiv('red-setting-list-actions');
+                [['eye', '预览', () => new ThemePreviewModal(this.app, this.plugin.settingsManager, theme, this.plugin.themeManager).open()],
+                 ['pencil', '编辑', () => new CreateThemeModal(this.app, this.plugin, (ut) => { this.plugin.settingsManager.updateTheme(theme.id, ut); this.display(); }, theme).open()],
+                 ['trash', '删除', () => new ConfirmModal(this.app, '确认删除', `确定要删除「${theme.name}」吗？`, async () => { await this.plugin.settingsManager.removeTheme(theme.id); this.display(); }).open()]
+                ].forEach(([icon, tooltip, handler]) => {
+                    const btn = actions.createEl('button', { cls: 'red-setting-btn-icon', attr: { 'aria-label': tooltip as string } });
+                    setIcon(btn, icon as string);
+                    btn.addEventListener('click', handler as () => void);
+                });
             });
-    
-        // 添加新主题按钮
-        new Setting(containerEl)
-            .addButton(btn => btn
-                .setButtonText('+ 新建主题')
-                .setCta()
-                .onClick(() => {
-                    new CreateThemeModal(
-                        this.app,
-                        this.plugin,
-                        async (newTheme) => {
-                            await this.plugin.settingsManager.addCustomTheme(newTheme);
-                            this.display();
-                            new Notice('请重启 Obsidian 或重新加载以使更改生效');
-                        }
-                    ).open();
-                }));
+        }
+
+        new Setting(containerEl).setClass('red-setting-add-btn').addButton(btn => btn.setButtonText('+ 新建主题').setCta().onClick(() => {
+            new CreateThemeModal(this.app, this.plugin, async (nt) => { await this.plugin.settingsManager.addCustomTheme(nt); this.display(); }).open();
+        }));
     }
 }

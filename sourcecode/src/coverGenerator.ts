@@ -77,6 +77,67 @@ export class CoverGenerator {
         return template.replace(/\{标题\}/g, title).replace(/\{摘要\}/g, excerpt);
     }
 
+    static async openaiGenerateImageBase64(apiEndpoint: string, apiKey: string, model: string, prompt: string): Promise<string> {
+        const url = apiEndpoint.replace(/\/+$/, '');
+        const res = await requestUrl({
+            url,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: model || 'dall-e-3',
+                prompt: prompt,
+                n: 1,
+                size: '1024x1024',
+                response_format: 'b64_json'
+            }),
+            throw: false
+        });
+
+        let data: any = null;
+        try {
+            data = typeof res.json === 'object' && res.json !== null ? res.json : JSON.parse(res.text || '{}');
+        } catch (_e) {
+            data = {};
+        }
+
+        if (res.status !== 200 || data.error) {
+            const msg = data.error?.message || res.text || (`HTTP ${res.status}`);
+            console.error('[obsidian-note2red] OpenAI image error', { status: res.status, body: data });
+            throw new Error(msg);
+        }
+
+        const b64 = data.data?.[0]?.b64_json;
+        if (b64) return b64;
+        throw new Error('OpenAI 未返回图片数据');
+    }
+
+    static async generateImage(settings: any, prompt: string): Promise<string> {
+        const provider = settings.coverApiProvider || 'gemini';
+        const apiKey = (settings.geminiApiKey || '').trim();
+        if (!apiKey) throw new Error('请先在设置中填写 API Key');
+
+        if (provider === 'openai' || provider === 'volcengine') {
+            const epDefaults: Record<string, string> = {
+                openai: 'https://api.openai.com/v1/images/generations',
+                volcengine: 'https://ark.cn-beijing.volces.com/api/v3/images/generations'
+            };
+            const endpoint = settings.coverApiEndpoint || epDefaults[provider] || epDefaults.openai;
+            const modelDefaults: Record<string, string> = {
+                openai: 'dall-e-3',
+                volcengine: 'doubao-seedream-3-0-t2i-250415'
+            };
+            const model = settings.geminiImageModel || modelDefaults[provider] || modelDefaults.openai;
+            return this.openaiGenerateImageBase64(endpoint, apiKey, model, prompt);
+        }
+
+        // default: gemini
+        const model = settings.geminiImageModel || 'gemini-2.5-flash-image';
+        return this.geminiGenerateImageBase64(apiKey, model, prompt);
+    }
+
     static async geminiGenerateImageBase64(apiKey: string, imageModel: string, prompt: string): Promise<string> {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(imageModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
         const res = await requestUrl({
