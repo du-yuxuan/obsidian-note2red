@@ -5,12 +5,17 @@ import { SettingsManager } from './settings/settings';
 import { RedConverter } from './converter';  // 暂时使用原来的转换器
 import { DonateManager } from './donateManager';
 import { RedSettingTab } from './settings/SettingTab';
+import { setPseudoDebug } from './utils/pseudo-element-renderer';
 
 export default class RedPlugin extends Plugin {
   settingsManager: SettingsManager;
   themeManager: ThemeManager;
 
   async onload() {
+    // ★ 挂载伪元素调试工具到全局
+    (window as any).__pseudoDebugOn = () => { setPseudoDebug(true); console.log('✅ [PseudoRenderer] 调试日志已开启'); };
+    (window as any).__pseudoDebugOff = () => { setPseudoDebug(false); console.log('🔇 [PseudoRenderer] 调试日志已关闭'); };
+    console.log('💡 伪元素调试: __pseudoDebugOn() / __pseudoDebugOff() 切换日志');
     // 初始化设置管理器
     this.settingsManager = new SettingsManager(this);
     await this.settingsManager.loadSettings();

@@ -43,6 +43,8 @@ export function parsePseudoRules(css: string): PseudoRule[] {
     const cssWithoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
     const blocks = splitCSSBlocks(cssWithoutComments);
 
+    debugLog('parsePseudoRules: CSS 共', blocks.length, '个顶层块');
+
     for (const block of blocks) {
         const braceIndex = block.indexOf('{');
         if (braceIndex === -1) continue;
@@ -69,7 +71,10 @@ export function parsePseudoRules(css: string): PseudoRule[] {
                 .trim();
             if (!baseSelector) continue;
 
-            rules.push({ baseSelector, pseudoType, properties: parseProperties(bodyPart) });
+            const props = parseProperties(bodyPart);
+            debugLog('  解析到规则:', baseSelector, '::' + pseudoType, 'content:', props['content'] || '(无)');
+
+            rules.push({ baseSelector, pseudoType, properties: props });
         }
     }
 
@@ -453,13 +458,17 @@ function renderPseudoForElement(
     let textContent: string | null = null;
     let isEmptyVisual = false;
 
+    debugLog('    renderPseudoForElement: <' + htmlEl.tagName.toLowerCase() + '> ::' + rule.pseudoType + ', content="' + cssContent + '"');
+
     if (isVisualOnly(rule.properties)) {
         // 纯装饰性，填充 &nbsp; 防止 XMLSerializer 自闭合导致 DOM 错乱
         isEmptyVisual = true;
         textContent = ' ';
+        debugLog('      纯装饰性伪元素 (isVisualOnly)');
     } else {
         // Fix (P1.1): 统一通过 resolveContent 解析，不再在此处手动拆括号解析 counter()
         textContent = resolveContent(cssContent, htmlEl, counterMap);
+        debugLog('      resolveContent 返回:', textContent === null ? 'null' : '"' + textContent + '"');
 
         // getComputedStyle 兜底（仅在 resolveContent 无法解析时）
         if (textContent === null) {
@@ -467,13 +476,18 @@ function renderPseudoForElement(
                 const computed = getComputedStyle(htmlEl,
                     rule.pseudoType === 'before' ? '::before' : '::after');
                 const compContent = computed.content;
+                debugLog('      getComputedStyle .content:', compContent);
                 if (compContent && compContent !== 'none' && compContent !== 'normal') {
                     textContent = compContent.replace(/^["']|["']$/g, '');
+                    debugLog('      getComputedStyle 兜底成功:', textContent);
                 }
-            } catch { /* ignore */ }
+            } catch (e) { debugWarn('      getComputedStyle 异常:', e); }
         }
 
-        if (!textContent && textContent !== '') return;
+        if (!textContent && textContent !== '') {
+            debugWarn('      ⚠ 无法解析 content，跳过渲染');
+            return;
+        }
     }
 
     // 创建 span
@@ -531,29 +545,134 @@ export function removePseudoRulesFromCSS(css: string): string {
 }
 
 // ============================================================
+// 调试开关
+// ============================================================
+
+let debugEnabled = false;
+const debugLog = (...args: unknown[]) => {
+    if (debugEnabled) console.log('[PseudoRenderer]', ...args);
+};
+const debugWarn = (...args: unknown[]) => {
+    if (debugEnabled) console.warn('[PseudoRenderer]', ...args);
+};
+
+export function setPseudoDebug(enabled: boolean) {
+    debugEnabled = enabled;
+}
+
+export function isPseudoDebugEnabled(): boolean {
+    return debugEnabled;
+}
+
+/**
+ * 从当前文档的所有 stylesheet 中收集包含 ::before/::after 的 CSS 规则。
+ * 用于在导出图片前将伪元素转为真实 DOM。
+ */
+export function collectPseudoCSS(): string {
+    const blocks: string[] = [];
+
+    try {
+        // 遍历所有 stylesheet
+        for (const sheet of Array.from(document.styleSheets)) {
+            try {
+                const rules = (sheet as CSSStyleSheet).cssRules || (sheet as CSSStyleSheet).rules;
+                if (!rules) continue;
+                for (const rule of Array.from(rules)) {
+                    if (rule instanceof CSSStyleRule) {
+                        const selectorText = (rule as CSSStyleRule).selectorText || '';
+                        if (selectorText.includes('::before') || selectorText.includes('::after')) {
+                            blocks.push(rule.cssText);
+                        }
+                    } else if (rule instanceof CSSMediaRule) {
+                        // 处理 @media 查询内的规则
+                        for (const inner of Array.from(rule.cssRules)) {
+                            if (inner instanceof CSSStyleRule) {
+                                const sel = (inner as CSSStyleRule).selectorText || '';
+                                if (sel.includes('::before') || sel.includes('::after')) {
+                                    blocks.push(inner.cssText);
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch {
+                // 跨域 stylesheet 无法访问，跳过
+            }
+        }
+    } catch (e) {
+        debugWarn('collectPseudoCSS: 遍历 stylesheet 失败:', e);
+    }
+
+    debugLog('collectPseudoCSS: 从 stylesheets 收集到', blocks.length, '条伪元素规则');
+    return blocks.join('\n');
+}
+
+// ============================================================
 // 主入口
 // ============================================================
 
 export function prerenderPseudoElements(container: HTMLElement, css: string): string {
-    if (!css || !container) return css;
+    if (!css || !container) {
+        debugWarn('prerenderPseudoElements: 缺少 CSS 或 container', { hasCSS: !!css, hasContainer: !!container });
+        return css;
+    }
+
+    debugLog('========== 伪元素预渲染开始 ==========');
+    debugLog('CSS 长度:', css.length, '字符');
 
     // 1. 解析伪元素规则
     const pseudoRules = parsePseudoRules(css);
-    if (pseudoRules.length === 0) return css;
+    debugLog('步骤1: 解析到', pseudoRules.length, '条伪元素规则');
+    if (pseudoRules.length > 0) {
+        debugLog('伪元素规则详情:', pseudoRules.map(r => ({
+            selector: r.baseSelector,
+            type: r.pseudoType,
+            content: r.properties['content'] || '(无)',
+            props: Object.keys(r.properties).join(', ')
+        })));
+    }
+    if (pseudoRules.length === 0) {
+        debugWarn('未找到任何 ::before/::after 规则，跳过渲染');
+        return css;
+    }
 
     // 2. 计算计数器
     const counterConfig = parseCounterConfig(css);
+    debugLog('步骤2: 计数器配置 —', counterConfig.resets.length, '个 reset,', counterConfig.increments.length, '个 increment');
     const counterMap = computeCounters(container, counterConfig);
+    debugLog('计数器计算结果: 共', counterMap.size, '个元素有计数器值');
 
     // 3. 渲染为真实 span
+    let renderedCount = 0;
+    let skippedCount = 0;
     for (const rule of pseudoRules) {
         const elements = safeQuerySelectorAll(container, rule.baseSelector);
+        debugLog(`步骤3: 选择器 "${rule.baseSelector}" (::${rule.pseudoType}) — 匹配到 ${elements.length} 个元素`);
+        if (elements.length === 0) {
+            debugWarn(`  ⚠ 选择器 "${rule.baseSelector}" 在 DOM 中未匹配到任何元素`);
+        }
         for (const el of elements) {
             const elCounters = counterMap.get(el as HTMLElement);
+            const beforeCount = el.children.length;
             renderPseudoForElement(el, rule, elCounters);
+            const afterCount = el.children.length;
+            if (afterCount > beforeCount) {
+                renderedCount++;
+                const newChild = rule.pseudoType === 'before' ? el.firstElementChild : el.lastElementChild;
+                debugLog(`  ✅ <${(el as HTMLElement).tagName.toLowerCase()}> — 渲染为 <span class="${(newChild as HTMLElement)?.className}">`, (newChild as HTMLElement)?.textContent);
+            } else {
+                skippedCount++;
+                debugWarn(`  ⏭  <${(el as HTMLElement).tagName.toLowerCase()}> — 跳过 (可能是 content 无法解析)`);
+            }
         }
     }
+    debugLog(`步骤3 完成: 成功渲染 ${renderedCount} 个 span, 跳过 ${skippedCount} 个`);
 
     // 4. 移除伪元素规则（保留注释）
-    return removePseudoRulesFromCSS(css);
+    const cleaned = removePseudoRulesFromCSS(css);
+    const removedBlocks = css.length - cleaned.length;
+    debugLog('步骤4: CSS 清理完成，移除了', removedBlocks, '字符的伪元素块');
+    debugLog('========== 伪元素预渲染结束 ==========');
+
+    return cleaned;
 }

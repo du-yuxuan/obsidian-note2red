@@ -1,4 +1,8 @@
 import * as htmlToImage from 'html-to-image';
+import { collectPseudoCSS, prerenderPseudoElements, setPseudoDebug, isPseudoDebugEnabled } from './utils/pseudo-element-renderer';
+
+// 默认开启调试，可在控制台执行 __pseudoDebug(false) 关闭
+setPseudoDebug(true);
 
 export class ClipboardManager {
     private static getExportConfig(imageElement: HTMLElement) {
@@ -22,6 +26,19 @@ export class ClipboardManager {
 
             // 确保浏览器完成重绘并等待资源加载
             await new Promise(resolve => setTimeout(resolve, 300));
+
+            // ★ 在截图前将 CSS 伪元素转为真实 DOM span
+            try {
+                const pseudoCSS = collectPseudoCSS();
+                if (pseudoCSS) {
+                    console.log('[ClipboardManager] 开始预渲染伪元素...');
+                    prerenderPseudoElements(imageElement, pseudoCSS);
+                } else if (isPseudoDebugEnabled()) {
+                    console.log('[ClipboardManager] 未收集到伪元素 CSS 规则，跳过预渲染');
+                }
+            } catch (e) {
+                console.warn('[ClipboardManager] 伪元素预渲染失败:', e);
+            }
 
             try {
                 const blob = await htmlToImage.toBlob(imageElement, this.getExportConfig(imageElement));

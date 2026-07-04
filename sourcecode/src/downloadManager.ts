@@ -1,5 +1,9 @@
 import * as htmlToImage from 'html-to-image';
 import JSZip from 'jszip';
+import { collectPseudoCSS, prerenderPseudoElements, setPseudoDebug, isPseudoDebugEnabled } from './utils/pseudo-element-renderer';
+
+// 默认开启调试，可在控制台执行 PseudoRenderer.setPseudoDebug(false) 关闭
+setPseudoDebug(true);
 
 export class DownloadManager {
     private static getExportConfig(imageElement: HTMLElement) {
@@ -61,6 +65,21 @@ export class DownloadManager {
             }));
             const imagePreviewEl = element.querySelector<HTMLElement>('.red-image-preview');
             const originalCoverFlag = imagePreviewEl ? imagePreviewEl.classList.contains('red-image-preview--cover-active') : false;
+
+            // ★ 在导出前将 CSS 伪元素转为真实 DOM span
+            if (imagePreviewEl) {
+                try {
+                    const pseudoCSS = collectPseudoCSS();
+                    if (pseudoCSS) {
+                        console.log('[DownloadManager] 开始预渲染伪元素...');
+                        prerenderPseudoElements(imagePreviewEl, pseudoCSS);
+                    } else if (isPseudoDebugEnabled()) {
+                        console.log('[DownloadManager] 未收集到伪元素 CSS 规则，跳过预渲染');
+                    }
+                } catch (e) {
+                    console.warn('[DownloadManager] 伪元素预渲染失败:', e);
+                }
+            }
 
             for (let i = 0; i < totalSections; i++) {
                 sections.forEach(section => {
@@ -165,6 +184,17 @@ export class DownloadManager {
 
             await new Promise(resolve => setTimeout(resolve, 300));
 
+            // ★ 在截图前将 CSS 伪元素转为真实 DOM span
+            try {
+                const pseudoCSS = collectPseudoCSS();
+                if (pseudoCSS) {
+                    console.log('[DownloadManager:Single] 开始预渲染伪元素...');
+                    prerenderPseudoElements(imageElement, pseudoCSS);
+                }
+            } catch (e) {
+                console.warn('[DownloadManager:Single] 伪元素预渲染失败:', e);
+            }
+
             try {
                 const blob = await htmlToImage.toBlob(imageElement, this.getExportConfig(imageElement));
                 if (!blob) throw new Error('Blob 对象为空');
@@ -219,6 +249,20 @@ export class DownloadManager {
             }));
             const imagePreviewEl = element.querySelector<HTMLElement>('.red-image-preview');
             const originalCoverFlag = imagePreviewEl ? imagePreviewEl.classList.contains('red-image-preview--cover-active') : false;
+
+            // ★ 在截图前将 CSS 伪元素转为真实 DOM span
+            if (imagePreviewEl) {
+                try {
+                    const pseudoCSS = collectPseudoCSS();
+                    if (pseudoCSS) {
+                        console.log('[DownloadManager:Long] 开始预渲染伪元素...');
+                        prerenderPseudoElements(imagePreviewEl, pseudoCSS);
+                    }
+                } catch (e) {
+                    console.warn('[DownloadManager:Long] 伪元素预渲染失败:', e);
+                }
+            }
+
             const canvases: HTMLCanvasElement[] = [];
 
             for (let i = 0; i < totalSections; i++) {
